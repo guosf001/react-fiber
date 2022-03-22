@@ -1,5 +1,5 @@
 import { updateNodeElement } from "../DOM";
-import { createTaskQueue, arrified, createStateNode, getTag } from "../Misc";
+import { createTaskQueue, arrified, createStateNode, getTag, getRoot } from "../Misc";
 
 const taskQueue = createTaskQueue()
 let subTask = null
@@ -11,6 +11,11 @@ const commitAllWork = (fiber) => {
      * 循环effects 数组 构建DOM节点树
      */
     fiber.effects.forEach(item => {
+
+        if (item.tag === 'class_component') {
+            item.stateNode.__fiber = item
+        }
+
         if (item.effectTag === 'delete') {
             item.parent.stateNode.removeChild(item.stateNode)
         } else if (item.effectTag === 'update') {
@@ -62,6 +67,24 @@ const getFirstTask = () => {
      * 
      */
 
+    if (task.from === 'class_component') {
+        const root = getRoot(task.instance)
+        console.log('root', root)
+        task.instance.__fiber.partialState = task.partialState
+        return {
+            props: root.props,
+            stateNode: root.stateNode,
+            tag: 'host_root',
+            effects: [],
+            child: null,
+            alternate: root
+        }
+    }
+
+    /**
+     * 返回最外层节点的fiber
+     */
+
     return {
         props: task.props,
         stateNode: task.dom,
@@ -76,7 +99,7 @@ const reconcileChildren = (fiber, children) => {
     /**
      * children 可能是对象，也可能是数组
      * 将children 转换为数组
-     */ 
+     */
     const arrifiedChildren = arrified(children)
     let index = 0
     let numberOfElement = arrifiedChildren.length
@@ -176,6 +199,13 @@ const executeTask = (fiber) => {
      */
 
     if (fiber.tag === 'class_component') {
+        if (fiber.stateNode.__fiber && fiber.stateNode.__fiber.partialState) {
+            fiber.stateNode.state = {
+                ...fiber.stateNode.state,
+                ...fiber.stateNode.__fiber.partialState
+            }
+        }
+
         reconcileChildren(fiber, fiber.stateNode.render())
     } else if (fiber.tag === 'function_component') {
         reconcileChildren(fiber, fiber.stateNode(fiber.props))
@@ -260,5 +290,14 @@ export const render = (element, dom) => {
     /**
      * 在浏览器空余时间执行任务
      */
+    requestIdleCallback(performTask)
+}
+
+export const scheduleUpdate = (instance, partialState) => {
+    taskQueue.push({
+        from: "class_component",
+        instance,
+        partialState
+    })
     requestIdleCallback(performTask)
 }
